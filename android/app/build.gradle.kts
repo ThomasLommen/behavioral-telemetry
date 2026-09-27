@@ -9,12 +9,14 @@ android {
     namespace = "com.behavioral.telemetry"
     compileSdk = 34
 
+    val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 11
+
     defaultConfig {
         applicationId = "com.behavioral.telemetry"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = runNumber
+        versionName = "1.0.$runNumber"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
