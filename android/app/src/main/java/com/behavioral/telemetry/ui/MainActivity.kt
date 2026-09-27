@@ -1,13 +1,16 @@
 package com.behavioral.telemetry.ui
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -23,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.behavioral.telemetry.data.DigestEntity
 import com.behavioral.telemetry.data.OnDeviceSynthesizer
@@ -37,15 +41,27 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
 
     private var hasUsageAccessState = mutableStateOf(false)
     private var hasNotificationAccessState = mutableStateOf(false)
+    private var hasPostNotificationsState = mutableStateOf(false)
+    private val selectedTabIndexState = mutableStateOf(0)
+
+    private val requestNotificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasPostNotificationsState.value = isGranted
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         startTelemetryService()
+
+        val targetTab = intent?.getIntExtra(WeeklyDigestWorker.EXTRA_TARGET_TAB, 0) ?: 0
+        selectedTabIndexState.value = targetTab.coerceIn(0, 2)
 
         // Schedule automated weekly digest via WorkManager
         WeeklyDigestWorker.scheduleWeeklyDigest(this)
@@ -60,7 +76,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val eventCount by eventCountFlow.collectAsState(initial = 0)
             val savedDigests by digestsFlow.collectAsState(initial = emptyList())
-            var selectedTabIndex by remember { mutableStateOf(0) }
+            var selectedTabIndex by selectedTabIndexState
             var apiKey by remember { mutableStateOf(savedApiKey) }
             var isEditingApiKey by remember { mutableStateOf(false) }
             var isAnalyzing by remember { mutableStateOf(false) }
@@ -319,6 +335,35 @@ class MainActivity : ComponentActivity() {
                                                     }
                                                 }
                                             }
+
+                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                                val hasPostNotif by hasPostNotificationsState
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                HorizontalDivider()
+                                                Spacer(modifier = Modifier.height(8.dp))
+
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text("Weekly Briefing Alerts", style = MaterialTheme.typography.bodyMedium)
+                                                        Text(
+                                                            if (hasPostNotif) "Active (delivers Sunday analysis)" else "Off (requires permission)",
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = if (hasPostNotif) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                                        )
+                                                    }
+                                                    if (!hasPostNotif) {
+                                                        TextButton(onClick = {
+                                                            requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                                        }) {
+                                                            Text("Enable")
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
 
@@ -397,18 +442,15 @@ class MainActivity : ComponentActivity() {
                                         Spacer(modifier = Modifier.height(16.dp))
                                     }
 
-                                    // Export to Downloads button
+                                    // Export Vault ShareSheet button
                                     OutlinedButton(
                                         onClick = {
                                             isExporting = true
                                             lifecycleScope.launch {
                                                 try {
-                                                    val file = DataExporter.exportToJsonl(this@MainActivity)
-                                                    Toast.makeText(
-                                                        this@MainActivity,
-                                                        "Exported to Downloads:\n${file.name}",
-                                                        Toast.LENGTH_LONG
-                                                    ).show()
+                                                    val file = DataExporter.exportTelemetryJson(this@MainActivity)
+                                                    val shareIntent = DataExporter.createShareIntent(this@MainActivity, file)
+                                                    startActivity(Intent.createChooser(shareIntent, "Export Telemetry Vault"))
                                                 } catch (e: Exception) {
                                                     Toast.makeText(this@MainActivity, "Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
                                                 } finally {
@@ -417,9 +459,9 @@ class MainActivity : ComponentActivity() {
                                             }
                                         },
                                         modifier = Modifier.fillMaxWidth(),
-                                        enabled = !isExporting && eventCount > 0
+                                        enabled = !isExporting && (eventCount > 0 || savedDigests.isNotEmpty())
                                     ) {
-                                        Text(if (isExporting) "Exporting..." else "Export JSONL to Downloads")
+                                        Text(if (isExporting) "Exporting Vault..." else "Export Telemetry Vault (JSON)")
                                     }
 
                                     Spacer(modifier = Modifier.height(8.dp))
@@ -556,107 +598,188 @@ class MainActivity : ComponentActivity() {
                             }
 
                             2 -> {
-                                // TAB 2: DIGEST ARCHIVE / HISTORY
-                                if (savedDigests.isEmpty()) {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(32.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.Center
-                                    ) {
-                                        Text(
-                                            text = "No saved digests yet.",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            color = MaterialTheme.colorScheme.secondary
+                                // TAB 2: DIGEST ARCHIVE & DATA SOVEREIGNTY VAULT
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(16.dp)
+                                ) {
+                                    // Data Sovereignty & Housekeeping Card
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceVariant
                                         )
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Text(
-                                            text = "Run your first analysis from the Live Monitor tab or wait for your Sunday auto-digest.",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.outline
-                                        )
-                                    }
-                                } else {
-                                    LazyColumn(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(16.dp),
-                                        verticalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
-                                        items(savedDigests, key = { it.id }) { digest ->
-                                            var isExpanded by remember { mutableStateOf(false) }
-
-                                            Card(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .clickable { isExpanded = !isExpanded },
-                                                colors = CardDefaults.cardColors(
-                                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                                                )
+                                        Column(modifier = Modifier.padding(14.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Column(modifier = Modifier.padding(16.dp)) {
-                                                    Row(
-                                                        modifier = Modifier.fillMaxWidth(),
-                                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                                        verticalAlignment = Alignment.CenterVertically
-                                                    ) {
-                                                        Text(
-                                                            text = digest.formattedDate,
-                                                            style = MaterialTheme.typography.labelLarge,
-                                                            color = MaterialTheme.colorScheme.primary
-                                                        )
-                                                        Badge(
-                                                            containerColor = if (digest.isAutomated) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer
+                                                Text(
+                                                    text = "Data Sovereignty & Vault",
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                Badge(
+                                                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                                                ) {
+                                                    Text(
+                                                        text = "${savedDigests.size} Digests | $eventCount Events",
+                                                        style = MaterialTheme.typography.labelSmall
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = "All telemetry and digests remain strictly on-device. Export or prune raw events anytime.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Spacer(modifier = Modifier.height(10.dp))
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Button(
+                                                    onClick = {
+                                                        lifecycleScope.launch {
+                                                            try {
+                                                                val file = DataExporter.exportTelemetryJson(this@MainActivity)
+                                                                val shareIntent = DataExporter.createShareIntent(this@MainActivity, file)
+                                                                startActivity(Intent.createChooser(shareIntent, "Export Telemetry Vault"))
+                                                            } catch (e: Exception) {
+                                                                Toast.makeText(this@MainActivity, "Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        }
+                                                    },
+                                                    modifier = Modifier.weight(1f),
+                                                    enabled = eventCount > 0 || savedDigests.isNotEmpty()
+                                                ) {
+                                                    Text("Export Vault", style = MaterialTheme.typography.labelMedium)
+                                                }
+
+                                                OutlinedButton(
+                                                    onClick = {
+                                                        lifecycleScope.launch {
+                                                            val thirtyDaysAgo = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(30)
+                                                            val deleted = db.telemetryDao().deleteOldEvents(thirtyDaysAgo)
+                                                            Toast.makeText(this@MainActivity, "Pruned $deleted events older than 30 days. Saved digests intact.", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    },
+                                                    modifier = Modifier.weight(1f),
+                                                    enabled = eventCount > 0
+                                                ) {
+                                                    Text("Prune (>30d)", style = MaterialTheme.typography.labelMedium)
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    if (savedDigests.isEmpty()) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .weight(1f),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.Center
+                                        ) {
+                                            Text(
+                                                text = "No saved digests yet.",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = MaterialTheme.colorScheme.secondary
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text(
+                                                text = "Run your first analysis from the Live Monitor tab or wait for your Sunday auto-digest.",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+                                        }
+                                    } else {
+                                        LazyColumn(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            items(savedDigests, key = { it.id }) { digest ->
+                                                var isExpanded by remember { mutableStateOf(false) }
+
+                                                Card(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable { isExpanded = !isExpanded },
+                                                    colors = CardDefaults.cardColors(
+                                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                                    )
+                                                ) {
+                                                    Column(modifier = Modifier.padding(16.dp)) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
                                                         ) {
                                                             Text(
-                                                                text = if (digest.isAutomated) "Weekly Auto" else "Manual",
-                                                                style = MaterialTheme.typography.labelSmall
+                                                                text = digest.formattedDate,
+                                                                style = MaterialTheme.typography.labelLarge,
+                                                                color = MaterialTheme.colorScheme.primary
                                                             )
+                                                            Badge(
+                                                                containerColor = if (digest.isAutomated) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer
+                                                            ) {
+                                                                Text(
+                                                                    text = if (digest.isAutomated) "Weekly Auto" else "Manual",
+                                                                    style = MaterialTheme.typography.labelSmall
+                                                                )
+                                                            }
                                                         }
-                                                    }
 
-                                                    Spacer(modifier = Modifier.height(6.dp))
-
-                                                    Text(
-                                                        text = digest.headline,
-                                                        style = MaterialTheme.typography.bodyMedium,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-
-                                                    if (isExpanded) {
-                                                        Spacer(modifier = Modifier.height(12.dp))
-                                                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                                                        Spacer(modifier = Modifier.height(12.dp))
+                                                        Spacer(modifier = Modifier.height(6.dp))
 
                                                         Text(
-                                                            text = digest.fullContent,
-                                                            style = MaterialTheme.typography.bodySmall,
+                                                            text = digest.headline,
+                                                            style = MaterialTheme.typography.bodyMedium,
                                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                                         )
 
-                                                        Spacer(modifier = Modifier.height(8.dp))
-                                                        Row(
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            horizontalArrangement = Arrangement.End
-                                                        ) {
-                                                            TextButton(
-                                                                onClick = {
-                                                                    lifecycleScope.launch {
-                                                                        db.digestDao().deleteDigest(digest.id)
-                                                                    }
-                                                                }
+                                                        if (isExpanded) {
+                                                            Spacer(modifier = Modifier.height(12.dp))
+                                                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                                            Spacer(modifier = Modifier.height(12.dp))
+
+                                                            Text(
+                                                                text = digest.fullContent,
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+
+                                                            Spacer(modifier = Modifier.height(8.dp))
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.End
                                                             ) {
-                                                                Text("Delete", color = MaterialTheme.colorScheme.error)
+                                                                TextButton(
+                                                                    onClick = {
+                                                                        lifecycleScope.launch {
+                                                                            db.digestDao().deleteDigest(digest.id)
+                                                                        }
+                                                                    }
+                                                                ) {
+                                                                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                                                                }
                                                             }
+                                                        } else {
+                                                            Spacer(modifier = Modifier.height(4.dp))
+                                                            Text(
+                                                                text = "Tap to view full digest...",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = MaterialTheme.colorScheme.primary
+                                                            )
                                                         }
-                                                    } else {
-                                                        Spacer(modifier = Modifier.height(4.dp))
-                                                        Text(
-                                                            text = "Tap to view full digest...",
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                            color = MaterialTheme.colorScheme.primary
-                                                        )
                                                     }
                                                 }
                                             }
@@ -671,10 +794,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val targetTab = intent.getIntExtra(WeeklyDigestWorker.EXTRA_TARGET_TAB, -1)
+        if (targetTab in 0..2) {
+            selectedTabIndexState.value = targetTab
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         hasUsageAccessState.value = UsageStatsHelper.hasUsagePermission(this)
         hasNotificationAccessState.value = hasNotificationPermission(this)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            hasPostNotificationsState.value = ContextCompat.checkSelfPermission(
+                this, Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            hasPostNotificationsState.value = true
+        }
     }
 
     private fun hasNotificationPermission(context: Context): Boolean {
