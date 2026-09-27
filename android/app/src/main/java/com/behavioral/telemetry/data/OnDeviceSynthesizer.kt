@@ -23,7 +23,6 @@ object OnDeviceSynthesizer {
 
         val sdfDate = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         val sdfTime = SimpleDateFormat("HH:mm", Locale.US)
-        val sdfFull = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
 
         val sb = StringBuilder()
 
@@ -32,8 +31,8 @@ object OnDeviceSynthesizer {
         // -------------------------------------------------------------
         val byDate = events.groupBy { sdfDate.format(Date(it.timestampUtc)) }
         sb.append("### 📊 Daily Behavioral Volume:\n")
-        sb.append("| Date | Total Unlocks | Micro-Checks (<45s) | Dark-Room (Lux<5) | Foreground App Switches |\n")
-        sb.append("| :--- | :--- | :--- | :--- | :--- |\n")
+        sb.append("| Date | Total Unlocks | Micro-Checks (<45s) | Dark-Room (Lux<5) | Focus Breaches (DND) | Net (Wi-Fi / Cell) |\n")
+        sb.append("| :--- | :--- | :--- | :--- | :--- | :--- |\n")
 
         for ((date, dayEvents) in byDate) {
             val unlocks = dayEvents.count { it.eventType == "UNLOCK" }
@@ -45,8 +44,12 @@ object OnDeviceSynthesizer {
             val darkSessions = dayEvents.count { e ->
                 parseMeta(e.metadataJson).optBoolean("is_dark_environment", false)
             }
-            val appSwitches = dayEvents.count { it.eventType == "APP_FOREGROUND" }
-            sb.append("| $date | $unlocks | $microChecks | $darkSessions | $appSwitches |\n")
+            val focusBreaches = dayEvents.count { e ->
+                e.eventType == "UNLOCK" && parseMeta(e.metadataJson).optBoolean("is_focus_breach", false)
+            }
+            val wifiUnlocks = dayEvents.count { e -> e.eventType == "UNLOCK" && parseMeta(e.metadataJson).optString("network_type") == "WIFI" }
+            val cellUnlocks = dayEvents.count { e -> e.eventType == "UNLOCK" && parseMeta(e.metadataJson).optString("network_type") == "CELLULAR" }
+            sb.append("| $date | $unlocks | $microChecks | $darkSessions | $focusBreaches | ${wifiUnlocks}W / ${cellUnlocks}C |\n")
         }
 
         // -------------------------------------------------------------
@@ -58,7 +61,6 @@ object OnDeviceSynthesizer {
         var bedtimeEventsCount = 0
 
         for ((date, dayEvents) in byDate) {
-            // Find night power connected between 20:00 and 04:00
             val nightCharger = dayEvents.filter { e ->
                 e.eventType == "POWER_CONNECTED" && isNightHour(e.timestampUtc)
             }.maxByOrNull { it.timestampUtc }
@@ -105,21 +107,38 @@ object OnDeviceSynthesizer {
         sb.append("- **Total Unlock Sessions:** $allUnlocks\n")
         sb.append("- **Sub-45s Compulsive Micro-Checks:** $allMicroChecks ($microRatio% of total unlocks)\n")
 
-        // App-hopping velocity
         val appEvents = events.filter { it.eventType == "APP_FOREGROUND" }
         if (allUnlocks > 0 && appEvents.isNotEmpty()) {
             val switchesPerUnlock = String.format(Locale.US, "%.1f", appEvents.size.toFloat() / allUnlocks.coerceAtLeast(1))
             sb.append("- **App-Hopping Velocity:** Average of $switchesPerUnlock foreground app switches per unlock session.\n")
         }
 
-        // Ringer mode / Headphone context
         val headphoneEvents = events.count { parseMeta(it.metadataJson).optBoolean("has_headphones", false) }
         val musicEvents = events.count { parseMeta(it.metadataJson).optBoolean("is_music_active", false) }
         val silentEvents = events.count { parseMeta(it.metadataJson).optString("ringer_mode") == "SILENT" }
         sb.append("- **Focus Audio State:** $headphoneEvents events with headphones connected, $musicEvents with background audio playing, $silentEvents with ringer set to Silent.\n")
 
         // -------------------------------------------------------------
-        // SECTION 4: Top Foreground Application Triggers
+        // SECTION 4: Environmental & Focus Anchors (Wi-Fi, Commute, DND)
+        // -------------------------------------------------------------
+        val wifiUnlocksTotal = events.count { it.eventType == "UNLOCK" && parseMeta(it.metadataJson).optString("network_type") == "WIFI" }
+        val cellUnlocksTotal = events.count { it.eventType == "UNLOCK" && parseMeta(it.metadataJson).optString("network_type") == "CELLULAR" }
+        val dndBreachesTotal = events.count { it.eventType == "UNLOCK" && parseMeta(it.metadataJson).optBoolean("is_focus_breach", false) }
+        val carAudioEventsTotal = events.count { parseMeta(it.metadataJson).optBoolean("has_car_audio", false) }
+
+        sb.append("\n### 🌐 Environmental Context & Focus Boundaries:\n")
+        sb.append("- **Network Context Distribution:** $wifiUnlocksTotal unlocks on Wi-Fi (Home/Office) vs $cellUnlocksTotal on Cellular (Transit/Commute).\n")
+        if (dndBreachesTotal > 0) {
+            sb.append("- **⚠️ Focus Rule Violations (DND Breaches):** $dndBreachesTotal unlocks occurred while Do Not Disturb / Focus Mode was actively enabled.\n")
+        } else {
+            sb.append("- **Focus Rule Adherence:** 0 DND breaches detected. Focus boundaries maintained.\n")
+        }
+        if (carAudioEventsTotal > 0) {
+            sb.append("- **🚗 In-Vehicle Interactions:** $carAudioEventsTotal events recorded while connected to car audio / vehicle Bluetooth.\n")
+        }
+
+        // -------------------------------------------------------------
+        // SECTION 5: Top Foreground Application Triggers
         // -------------------------------------------------------------
         if (appEvents.isNotEmpty()) {
             val topApps = appEvents.groupBy { it.packageName ?: "Unknown" }
@@ -136,7 +155,7 @@ object OnDeviceSynthesizer {
         }
 
         // -------------------------------------------------------------
-        // SECTION 5: Notification Trap Detection (B = MAP)
+        // SECTION 6: Notification Trap Detection (B = MAP)
         // -------------------------------------------------------------
         val notifEvents = events.filter { it.eventType == "NOTIFICATION_POSTED" }
         if (notifEvents.isNotEmpty()) {
@@ -153,7 +172,7 @@ object OnDeviceSynthesizer {
         }
 
         // -------------------------------------------------------------
-        // SECTION 6: Longitudinal Prior Digest Baselines (Habit Drift)
+        // SECTION 7: Longitudinal Prior Digest Baselines (Habit Drift)
         // -------------------------------------------------------------
         if (priorDigests.isNotEmpty()) {
             sb.append("\n### 🗓️ Historical Baselines (Previous Digests):\n")

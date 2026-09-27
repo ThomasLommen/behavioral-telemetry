@@ -24,16 +24,32 @@ object AudioStateHelper {
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-                val hasHeadphones = devices.any { device ->
-                    device.type in listOf(
+                var hasHeadphones = false
+                var hasCarAudio = false
+
+                for (device in devices) {
+                    when (device.type) {
                         AudioDeviceInfo.TYPE_WIRED_HEADSET,
                         AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+                        AudioDeviceInfo.TYPE_USB_HEADSET -> {
+                            hasHeadphones = true
+                        }
                         AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
-                        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
-                        AudioDeviceInfo.TYPE_USB_HEADSET
-                    )
+                        AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> {
+                            hasHeadphones = true
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                                val name = device.productName.toString().lowercase()
+                                if (name.contains("car") || name.contains("auto") || name.contains("sync") ||
+                                    name.contains("handsfree") || name.contains("uconnect") || name.contains("bmw") ||
+                                    name.contains("audi") || name.contains("toyota") || name.contains("tesla")) {
+                                    hasCarAudio = true
+                                }
+                            }
+                        }
+                    }
                 }
                 json.put("has_headphones", hasHeadphones)
+                json.put("has_car_audio", hasCarAudio)
             }
         } catch (e: Exception) {
             // Non-critical telemetry context fails gracefully

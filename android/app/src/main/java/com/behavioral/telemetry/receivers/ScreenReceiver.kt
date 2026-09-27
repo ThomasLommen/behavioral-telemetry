@@ -8,6 +8,8 @@ import com.behavioral.telemetry.data.TelemetryEntity
 import com.behavioral.telemetry.data.UsageStatsHelper
 import com.behavioral.telemetry.sensors.AmbientLightHelper
 import com.behavioral.telemetry.sensors.AudioStateHelper
+import com.behavioral.telemetry.sensors.FocusModeHelper
+import com.behavioral.telemetry.sensors.NetworkStateHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -38,14 +40,21 @@ class ScreenReceiver : BroadcastReceiver() {
             Intent.ACTION_SCREEN_ON -> {
                 lastScreenOnTimestamp = now
                 val audioCtx = AudioStateHelper.getAudioAndRingerContext(context)
+                val net = NetworkStateHelper.getNetworkSnapshot(context)
+                val isDnd = FocusModeHelper.isDndActive(context)
 
                 // Capture 1-shot ambient light sensor
                 AmbientLightHelper.captureOneShotLux(context) { lux ->
                     lastAmbientLux = lux
-                    val meta = JSONObject(audioCtx.toString())
-                    if (lux != null) {
-                        meta.put("ambient_lux", lux)
-                        meta.put("is_dark_environment", lux < 5f)
+                    val meta = JSONObject(audioCtx.toString()).apply {
+                        if (lux != null) {
+                            put("ambient_lux", lux)
+                            put("is_dark_environment", lux < 5f)
+                        }
+                        put("network_type", net.type)
+                        put("is_network_metered", net.isMetered)
+                        put("is_focus_breach", isDnd)
+                        put("dnd_filter", FocusModeHelper.getInterruptionFilterName(context))
                     }
 
                     val entity = TelemetryEntity(
@@ -64,11 +73,18 @@ class ScreenReceiver : BroadcastReceiver() {
                 lastUnlockTimestamp = now
                 val latencyFromOn = if (lastScreenOnTimestamp > 0L) now - lastScreenOnTimestamp else 0L
                 val audioCtx = AudioStateHelper.getAudioAndRingerContext(context)
+                val net = NetworkStateHelper.getNetworkSnapshot(context)
+                val isDnd = FocusModeHelper.isDndActive(context)
+
                 if (lastAmbientLux != null) {
                     audioCtx.put("ambient_lux", lastAmbientLux)
                     audioCtx.put("is_dark_environment", (lastAmbientLux ?: 99f) < 5f)
                 }
                 audioCtx.put("wake_to_unlock_ms", latencyFromOn)
+                audioCtx.put("network_type", net.type)
+                audioCtx.put("is_network_metered", net.isMetered)
+                audioCtx.put("is_focus_breach", isDnd)
+                audioCtx.put("dnd_filter", FocusModeHelper.getInterruptionFilterName(context))
 
                 val entity = TelemetryEntity(
                     timestampUtc = now,
@@ -86,10 +102,14 @@ class ScreenReceiver : BroadcastReceiver() {
                 val sessionStart = if (lastUnlockTimestamp > 0L) lastUnlockTimestamp else lastScreenOnTimestamp
                 val sessionDuration = if (sessionStart > 0L) now - sessionStart else 0L
                 val isMicroCheck = sessionDuration in 1..44999L
+                val net = NetworkStateHelper.getNetworkSnapshot(context)
+                val isDnd = FocusModeHelper.isDndActive(context)
 
                 val meta = JSONObject().apply {
                     put("session_duration_ms", sessionDuration)
                     put("is_micro_check", isMicroCheck)
+                    put("network_type", net.type)
+                    put("is_focus_breach", isDnd)
                     if (lastAmbientLux != null) {
                         put("ambient_lux", lastAmbientLux)
                         put("is_dark_environment", (lastAmbientLux ?: 99f) < 5f)
