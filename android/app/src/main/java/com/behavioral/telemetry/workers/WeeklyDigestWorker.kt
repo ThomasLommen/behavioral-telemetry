@@ -41,6 +41,7 @@ class WeeklyDigestWorker(
     }
 
     override suspend fun doWork(): Result {
+        val prefs = applicationContext.getSharedPreferences(com.behavioral.telemetry.data.TelemetryConfig.PREFS_NAME, Context.MODE_PRIVATE)
         val apiKey = com.behavioral.telemetry.data.TelemetryConfig.getApiKey(applicationContext)
 
         if (apiKey.isBlank()) {
@@ -70,7 +71,7 @@ class WeeklyDigestWorker(
             )
 
             // Save result to preferences for MainActivity to show
-            prefs.edit().putString("latest_weekly_digest", result).apply()
+            prefs.edit().putString(com.behavioral.telemetry.data.TelemetryConfig.KEY_LATEST_DIGEST, result).apply()
 
             // Post notification
             postDigestNotification(result)
