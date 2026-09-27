@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.behavioral.telemetry.data.DigestEntity
 import com.behavioral.telemetry.data.OnDeviceSynthesizer
+import com.behavioral.telemetry.data.TelemetryConfig
 import com.behavioral.telemetry.data.TelemetryDatabase
 import com.behavioral.telemetry.data.UsageStatsHelper
 import com.behavioral.telemetry.export.DataExporter
@@ -36,12 +37,6 @@ import java.util.Date
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
-
-    companion object {
-        private const val PREFS_NAME = com.behavioral.telemetry.data.TelemetryConfig.PREFS_NAME
-        private const val KEY_GEMINI_API = com.behavioral.telemetry.data.TelemetryConfig.KEY_GEMINI_API
-        private const val KEY_LATEST_DIGEST = com.behavioral.telemetry.data.TelemetryConfig.KEY_LATEST_DIGEST
-    }
 
     private var hasUsageAccessState = mutableStateOf(false)
     private var hasNotificationAccessState = mutableStateOf(false)
@@ -283,7 +278,7 @@ class MainActivity : ComponentActivity() {
                                                 val summary = OnDeviceSynthesizer.buildTelemetrySummary(this@MainActivity)
                                                 val result = GeminiClient.analyzeTelemetry(apiKey.trim(), summary)
                                                 analysisResult = result
-                                                prefs.edit().putString(KEY_LATEST_DIGEST, result).apply()
+                                                prefs.edit().putString(TelemetryConfig.KEY_LATEST_DIGEST, result).apply()
 
                                                 // Save to Digest Archive
                                                 val now = System.currentTimeMillis()
