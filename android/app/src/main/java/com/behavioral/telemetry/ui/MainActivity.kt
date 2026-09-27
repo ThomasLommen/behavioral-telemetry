@@ -38,9 +38,9 @@ import java.util.Locale
 class MainActivity : ComponentActivity() {
 
     companion object {
-        private const val PREFS_NAME = "telemetry_prefs"
-        private const val KEY_GEMINI_API = "gemini_api_key"
-        private const val KEY_LATEST_DIGEST = "latest_weekly_digest"
+        private const val PREFS_NAME = com.behavioral.telemetry.data.TelemetryConfig.PREFS_NAME
+        private const val KEY_GEMINI_API = com.behavioral.telemetry.data.TelemetryConfig.KEY_GEMINI_API
+        private const val KEY_LATEST_DIGEST = com.behavioral.telemetry.data.TelemetryConfig.KEY_LATEST_DIGEST
     }
 
     private var hasUsageAccessState = mutableStateOf(false)
@@ -56,16 +56,16 @@ class MainActivity : ComponentActivity() {
         val db = TelemetryDatabase.getDatabase(this)
         val eventCountFlow = db.telemetryDao().getEventCountFlow()
         val digestsFlow = db.digestDao().getAllDigestsFlow()
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val savedApiKey = prefs.getString(KEY_GEMINI_API, "") ?: ""
-        val cachedDigest = prefs.getString(KEY_LATEST_DIGEST, null)
+        val prefs = getSharedPreferences(com.behavioral.telemetry.data.TelemetryConfig.PREFS_NAME, Context.MODE_PRIVATE)
+        val savedApiKey = com.behavioral.telemetry.data.TelemetryConfig.getApiKey(this)
+        val cachedDigest = prefs.getString(com.behavioral.telemetry.data.TelemetryConfig.KEY_LATEST_DIGEST, null)
 
         setContent {
             val eventCount by eventCountFlow.collectAsState(initial = 0)
             val savedDigests by digestsFlow.collectAsState(initial = emptyList())
             var selectedTabIndex by remember { mutableStateOf(0) }
             var apiKey by remember { mutableStateOf(savedApiKey) }
-            var isEditingApiKey by remember { mutableStateOf(savedApiKey.isBlank()) }
+            var isEditingApiKey by remember { mutableStateOf(false) }
             var isAnalyzing by remember { mutableStateOf(false) }
             var isExporting by remember { mutableStateOf(false) }
             var analysisResult by remember { mutableStateOf(cachedDigest) }
@@ -181,7 +181,7 @@ class MainActivity : ComponentActivity() {
                                             value = apiKey,
                                             onValueChange = {
                                                 apiKey = it
-                                                prefs.edit().putString(KEY_GEMINI_API, it).apply()
+                                                com.behavioral.telemetry.data.TelemetryConfig.setApiKey(this@MainActivity, it)
                                             },
                                             label = { Text("Gemini API Key") },
                                             placeholder = { Text("Paste your API key here") },
@@ -189,14 +189,21 @@ class MainActivity : ComponentActivity() {
                                             singleLine = true,
                                             visualTransformation = PasswordVisualTransformation()
                                         )
-                                        if (apiKey.isNotBlank()) {
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.End
-                                            ) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            TextButton(onClick = {
+                                                apiKey = com.behavioral.telemetry.data.TelemetryConfig.DEFAULT_GEMINI_API_KEY
+                                                com.behavioral.telemetry.data.TelemetryConfig.setApiKey(this@MainActivity, apiKey)
+                                                Toast.makeText(this@MainActivity, "Reset to default key", Toast.LENGTH_SHORT).show()
+                                            }) {
+                                                Text("Reset Default")
+                                            }
+                                            if (apiKey.isNotBlank()) {
                                                 TextButton(onClick = { isEditingApiKey = false }) {
-                                                    Text("Hide Key")
+                                                    Text("Done")
                                                 }
                                             }
                                         }

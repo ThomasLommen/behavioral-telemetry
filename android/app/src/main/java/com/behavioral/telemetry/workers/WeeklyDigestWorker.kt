@@ -41,8 +41,7 @@ class WeeklyDigestWorker(
     }
 
     override suspend fun doWork(): Result {
-        val prefs = applicationContext.getSharedPreferences("telemetry_prefs", Context.MODE_PRIVATE)
-        val apiKey = prefs.getString("gemini_api_key", "") ?: ""
+        val apiKey = com.behavioral.telemetry.data.TelemetryConfig.getApiKey(applicationContext)
 
         if (apiKey.isBlank()) {
             return Result.success()
