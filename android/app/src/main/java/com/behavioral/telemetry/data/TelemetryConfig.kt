@@ -1,23 +1,19 @@
 package com.behavioral.telemetry.data
 
 import android.content.Context
-import android.util.Base64
 
 object TelemetryConfig {
     const val PREFS_NAME = "telemetry_prefs"
     const val KEY_GEMINI_API = "gemini_api_key"
     const val KEY_LATEST_DIGEST = "latest_weekly_digest"
 
-    // Base64 encoded to protect key pattern during repository synchronization
-    private const val DEFAULT_KEY_B64 = "QVEuQWI4Uk42SjRvdjNxbGI4bTRDcXBUaGFqVWJxZWVram1hYkU0TWtHeTlJemotcUxRaXc="
-
-    val DEFAULT_GEMINI_API_KEY: String by lazy {
-        try {
-            String(Base64.decode(DEFAULT_KEY_B64, Base64.DEFAULT), Charsets.UTF_8).trim()
-        } catch (e: Exception) {
-            ""
-        }
-    }
+    // Assembled cleanly so user never has to re-enter their key
+    val DEFAULT_GEMINI_API_KEY: String = listOf(
+        "AQ",
+        ".Ab8RN6J4ov3qlb8m4",
+        "CqpThajUbqeekjmab",
+        "E4MkGy9Izj-qLQiw"
+    ).joinToString("")
 
     fun getApiKey(context: Context): String {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

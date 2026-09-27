@@ -23,16 +23,10 @@ android {
 
     signingConfigs {
         create("customSign") {
-            val ksFile = file("telemetry.keystore")
-            if (!ksFile.exists()) {
-                throw GradleException("Keystore not found at ${ksFile.absolutePath}")
-            }
-            storeFile = ksFile
+            storeFile = file("telemetry.keystore")
             storePassword = "android"
             keyAlias = "telemetrykey"
             keyPassword = "android"
-            v1SigningEnabled = true
-            v2SigningEnabled = true
         }
     }
 
