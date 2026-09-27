@@ -52,6 +52,24 @@ class WeeklyDigestWorker(
             val summary = OnDeviceSynthesizer.buildTelemetrySummary(applicationContext)
             val result = GeminiClient.analyzeTelemetry(apiKey.trim(), summary)
 
+            val now = System.currentTimeMillis()
+            val sdf = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.US)
+            val headline = result.lines()
+                .firstOrNull { it.startsWith("**Headline:**") || it.contains("Headline") }
+                ?.replace("**Headline:**", "")?.trim()
+                ?: "Weekly Behavioral Briefing"
+
+            val db = com.behavioral.telemetry.data.TelemetryDatabase.getDatabase(applicationContext)
+            db.digestDao().insertDigest(
+                com.behavioral.telemetry.data.DigestEntity(
+                    timestampUtc = now,
+                    formattedDate = sdf.format(java.util.Date(now)),
+                    headline = headline,
+                    fullContent = result,
+                    isAutomated = true
+                )
+            )
+
             // Save result to preferences for MainActivity to show
             prefs.edit().putString("latest_weekly_digest", result).apply()
 
