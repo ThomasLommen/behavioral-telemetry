@@ -21,9 +21,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.behavioral.telemetry.data.OnDeviceSynthesizer
 import com.behavioral.telemetry.data.TelemetryDatabase
+import com.behavioral.telemetry.data.UsageStatsHelper
 import com.behavioral.telemetry.export.DataExporter
 import com.behavioral.telemetry.gemini.GeminiClient
 import com.behavioral.telemetry.service.CollectorService
+import com.behavioral.telemetry.workers.WeeklyDigestWorker
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -31,16 +33,24 @@ class MainActivity : ComponentActivity() {
     companion object {
         private const val PREFS_NAME = "telemetry_prefs"
         private const val KEY_GEMINI_API = "gemini_api_key"
+        private const val KEY_LATEST_DIGEST = "latest_weekly_digest"
     }
+
+    private var hasUsageAccessState = mutableStateOf(false)
+    private var hasNotificationAccessState = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         startTelemetryService()
 
+        // Schedule automated weekly digest via WorkManager
+        WeeklyDigestWorker.scheduleWeeklyDigest(this)
+
         val db = TelemetryDatabase.getDatabase(this)
         val eventCountFlow = db.telemetryDao().getEventCountFlow()
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val savedApiKey = prefs.getString(KEY_GEMINI_API, "") ?: ""
+        val cachedDigest = prefs.getString(KEY_LATEST_DIGEST, null)
 
         setContent {
             val eventCount by eventCountFlow.collectAsState(initial = 0)
@@ -48,7 +58,9 @@ class MainActivity : ComponentActivity() {
             var isEditingApiKey by remember { mutableStateOf(savedApiKey.isBlank()) }
             var isAnalyzing by remember { mutableStateOf(false) }
             var isExporting by remember { mutableStateOf(false) }
-            var analysisResult by remember { mutableStateOf<String?>(null) }
+            var analysisResult by remember { mutableStateOf(cachedDigest) }
+            val hasUsageAccess by hasUsageAccessState
+            val hasNotificationAccess by hasNotificationAccessState
             val scrollState = rememberScrollState()
 
             MaterialTheme {
@@ -69,7 +81,7 @@ class MainActivity : ComponentActivity() {
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Direct-to-Gemini Socratic Engine",
+                            text = "Executive Behavioral Briefing Engine",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.secondary
                         )
@@ -154,6 +166,64 @@ class MainActivity : ComponentActivity() {
 
                         Spacer(modifier = Modifier.height(16.dp))
 
+                        // Optional Enhanced Telemetry Permissions Section
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surface
+                            )
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text(
+                                    text = "Enhanced Telemetry Signals",
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Usage Access Row
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (hasUsageAccess) "App-Level Tracking: Enabled" else "App-Level Tracking: Disabled",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (hasUsageAccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                                    )
+                                    if (!hasUsageAccess) {
+                                        TextButton(onClick = {
+                                            startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                                        }) {
+                                            Text("Enable")
+                                        }
+                                    }
+                                }
+
+                                // Notification Listener Row
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (hasNotificationAccess) "Notification Traps: Enabled" else "Notification Traps: Disabled",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (hasNotificationAccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                                    )
+                                    if (!hasNotificationAccess) {
+                                        TextButton(onClick = {
+                                            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                                        }) {
+                                            Text("Enable")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
                         // Direct-to-Gemini Analyze Button
                         Button(
                             onClick = {
@@ -162,12 +232,12 @@ class MainActivity : ComponentActivity() {
                                     return@Button
                                 }
                                 isAnalyzing = true
-                                analysisResult = null
                                 lifecycleScope.launch {
                                     try {
                                         val summary = OnDeviceSynthesizer.buildTelemetrySummary(this@MainActivity)
                                         val result = GeminiClient.analyzeTelemetry(apiKey.trim(), summary)
                                         analysisResult = result
+                                        prefs.edit().putString(KEY_LATEST_DIGEST, result).apply()
                                     } catch (e: Exception) {
                                         analysisResult = "Analysis error: ${e.message}"
                                     } finally {
@@ -185,7 +255,7 @@ class MainActivity : ComponentActivity() {
                                     strokeWidth = 2.dp
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Consulting Socratic Agent...")
+                                Text("Synthesizing Executive Digest...")
                             } else {
                                 Text("Analyze with Gemini Directly")
                             }
@@ -202,7 +272,7 @@ class MainActivity : ComponentActivity() {
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
                                     Text(
-                                        text = "Socratic Behavioral Review",
+                                        text = "Executive Behavioral Digest",
                                         style = MaterialTheme.typography.titleMedium,
                                         color = MaterialTheme.colorScheme.onSecondaryContainer
                                     )
@@ -259,6 +329,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        hasUsageAccessState.value = UsageStatsHelper.hasUsagePermission(this)
+        hasNotificationAccessState.value = hasNotificationPermission(this)
+    }
+
+    private fun hasNotificationPermission(context: Context): Boolean {
+        val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
+        return flat != null && flat.contains(context.packageName)
     }
 
     private fun startTelemetryService() {

@@ -63,4 +63,7 @@ dependencies {
 
     // HTTP Client for Gemini API
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // WorkManager for automated scheduled weekly digest
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 }

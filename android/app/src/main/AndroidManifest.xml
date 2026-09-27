@@ -46,6 +46,17 @@
                 android:value="Personal digital wellbeing behavioral telemetry logger" />
         </service>
 
+        <!-- Notification listener service for notification trap detection -->
+        <service
+            android:name=".service.TelemetryNotificationListener"
+            android:label="Behavioral Telemetry Notification Listener"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <!-- Boot receiver to resume service on reboot -->
         <receiver
             android:name=".receivers.BootReceiver"
