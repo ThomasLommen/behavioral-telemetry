@@ -15,6 +15,9 @@ interface DigestDao {
     @Query("SELECT * FROM saved_digests ORDER BY timestampUtc DESC")
     fun getAllDigestsFlow(): Flow<List<DigestEntity>>
 
+    @Query("SELECT * FROM saved_digests ORDER BY timestampUtc DESC")
+    suspend fun getAllDigests(): List<DigestEntity>
+
     @Query("SELECT * FROM saved_digests ORDER BY timestampUtc DESC LIMIT 1")
     suspend fun getLatestDigest(): DigestEntity?
 
