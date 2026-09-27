@@ -19,9 +19,22 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("customSign") {
+            storeFile = file("telemetry.keystore")
+            storePassword = "android"
+            keyAlias = "telemetryKey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("customSign")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("customSign")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
