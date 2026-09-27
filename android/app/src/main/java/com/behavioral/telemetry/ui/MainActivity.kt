@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.behavioral.telemetry.data.OnDeviceSynthesizer
@@ -44,6 +45,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val eventCount by eventCountFlow.collectAsState(initial = 0)
             var apiKey by remember { mutableStateOf(savedApiKey) }
+            var isEditingApiKey by remember { mutableStateOf(savedApiKey.isBlank()) }
             var isAnalyzing by remember { mutableStateOf(false) }
             var isExporting by remember { mutableStateOf(false) }
             var analysisResult by remember { mutableStateOf<String?>(null) }
@@ -97,18 +99,58 @@ class MainActivity : ComponentActivity() {
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // Gemini API Key Input
-                        OutlinedTextField(
-                            value = apiKey,
-                            onValueChange = {
-                                apiKey = it
-                                prefs.edit().putString(KEY_GEMINI_API, it).apply()
-                            },
-                            label = { Text("Gemini API Key") },
-                            placeholder = { Text("Paste your API key here") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
+                        // Gemini API Key Input (Hidden once saved)
+                        if (!isEditingApiKey && apiKey.isNotBlank()) {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Gemini API Key Configured",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    TextButton(onClick = { isEditingApiKey = true }) {
+                                        Text("Change")
+                                    }
+                                }
+                            }
+                        } else {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                OutlinedTextField(
+                                    value = apiKey,
+                                    onValueChange = {
+                                        apiKey = it
+                                        prefs.edit().putString(KEY_GEMINI_API, it).apply()
+                                    },
+                                    label = { Text("Gemini API Key") },
+                                    placeholder = { Text("Paste your API key here") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    visualTransformation = PasswordVisualTransformation()
+                                )
+                                if (apiKey.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End
+                                    ) {
+                                        TextButton(onClick = { isEditingApiKey = false }) {
+                                            Text("Hide Key")
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
                         Spacer(modifier = Modifier.height(16.dp))
 
